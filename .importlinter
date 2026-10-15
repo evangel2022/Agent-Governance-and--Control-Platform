@@ -1,0 +1,19 @@
+[importlinter]
+root_package = gov.api
+
+[importlinter:contract:layering]
+name = Control plane layering (interface depends on application depends on domain)
+type = layers
+layers =
+    gov.api.interface
+    gov.api.application
+    gov.api.domain
+
+[importlinter:contract:domain purity]
+name = The domain layer imports no infrastructure or transport
+type = forbidden
+source_modules =
+    gov.api.domain
+forbidden_modules =
+    gov.api.infrastructure
+    gov.api.interface

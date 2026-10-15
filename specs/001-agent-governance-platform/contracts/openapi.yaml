@@ -1,0 +1,1731 @@
+openapi: 3.1.0
+info:
+  title: Agent Governance and Control Platform API
+  version: 0.1.0
+  description: >
+    Control-plane REST contract for the Agent governance platform. All endpoints
+    are organisation-scoped: the caller's organisation is derived from the bearer
+    token, never from a request parameter, so that a client cannot ask for
+    another organisation's data.
+  contact:
+    name: Platform Governance Team
+servers:
+  - url: https://{host}/v1
+    variables:
+      host:
+        default: localhost
+security:
+  - bearerAuth: []
+tags:
+  - name: Identity
+  - name: Registry
+  - name: Policy
+  - name: Approval
+  - name: Audit
+  - name: Evaluation
+  - name: Release
+  - name: Dashboard
+  - name: Invocation
+paths:
+  /me:
+    get:
+      tags: [Identity]
+      summary: Return the authenticated user, roles and effective permissions
+      operationId: getMe
+      responses:
+        "200":
+          description: The caller's identity and permissions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Principal" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /users:
+    get:
+      tags: [Identity]
+      summary: List users in the caller's organisation
+      operationId: listUsers
+      parameters:
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: A page of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserPage"
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Identity]
+      summary: Create a user in the caller's organisation
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserCreate" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409":
+          description: A user with this external subject already exists here
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /users/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      tags: [Identity]
+      summary: Get a user
+      operationId: getUser
+      responses:
+        "200":
+          description: The user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Identity]
+      summary: Amend a user, or disable and re-enable them
+      operationId: updateUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UserUpdate" }
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /role-assignments:
+    get:
+      tags: [Identity]
+      summary: List assignments, optionally filtered
+      operationId: listRoleAssignments
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: role_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: include_ended
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Assignments visible to the caller's organisation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RoleAssignment" }
+    post:
+      tags: [Identity]
+      summary: Grant a role to a user within a scope
+      operationId: createRoleAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleAssignmentCreate" }
+      responses:
+        "201":
+          description: Role granted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleAssignment" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /role-assignments/{assignment_id}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/AssignmentId"
+    post:
+      tags: [Identity]
+      summary: Revoke an assignment, recording why
+      operationId: revokeRoleAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevokeAssignment" }
+      responses:
+        "200":
+          description: Assignment revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleAssignment" }
+        "409":
+          description: >
+            Refused because it would remove the organisation's last authority to
+            manage permissions
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /agents:
+    get:
+      tags: [Registry]
+      summary: List agents
+      operationId: listAgents
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/AgentStatus" }
+        - name: owner_user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: A page of agents
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentPage" }
+    post:
+      tags: [Registry]
+      summary: Register an agent
+      operationId: createAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentCreate" }
+      responses:
+        "201":
+          description: Agent registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /agents/{agent_id}:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      tags: [Registry]
+      summary: Get an agent
+      operationId: getAgent
+      responses:
+        "200":
+          description: The agent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Registry]
+      summary: Update an agent's mutable attributes
+      operationId: updateAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentUpdate" }
+      responses:
+        "200":
+          description: Agent updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /agents/{agent_id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      tags: [Registry]
+      summary: List versions of an agent
+      operationId: listAgentVersions
+      responses:
+        "200":
+          description: Versions ordered by creation time
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AgentVersion" }
+    post:
+      tags: [Registry]
+      summary: Add a version to an agent
+      operationId: createAgentVersion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentVersionCreate" }
+      responses:
+        "201":
+          description: Version created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentVersion" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /agents/{agent_id}/versions/{version}/release:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+      - name: version
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Registry]
+      summary: Release a version, demoting the previously released one
+      description: >
+        At most one version of an Agent is released, so releasing a version
+        demotes the previously released one in the same transaction (FR-006).
+      operationId: releaseAgentVersion
+      responses:
+        "200":
+          description: The released version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentVersion" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /tools:
+    get:
+      tags: [Registry]
+      summary: List tools
+      operationId: listTools
+      parameters:
+        - name: risk_level
+          in: query
+          schema: { $ref: "#/components/schemas/RiskLevel" }
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: A page of tools
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ToolPage" }
+    post:
+      tags: [Registry]
+      summary: Register a tool with its permissions and risk level
+      operationId: createTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ToolCreate" }
+      responses:
+        "201":
+          description: Tool registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tool" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /tools/{tool_id}:
+    parameters:
+      - $ref: "#/components/parameters/ToolId"
+    get:
+      tags: [Registry]
+      summary: Get a tool
+      operationId: getTool
+      responses:
+        "200":
+          description: The tool
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tool" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Registry]
+      summary: Update a tool (including its risk level)
+      operationId: updateTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ToolUpdate" }
+      responses:
+        "200":
+          description: Tool updated; in-flight approvals re-evaluated when risk rises
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tool" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /models:
+    get:
+      tags: [Registry]
+      summary: List models
+      operationId: listModels
+      responses:
+        "200":
+          description: A page of models
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelPage" }
+    post:
+      tags: [Registry]
+      summary: Register a model with vendor and usage restrictions
+      operationId: createModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelCreate" }
+      responses:
+        "201":
+          description: Model registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Model" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /policies:
+    get:
+      tags: [Policy]
+      summary: List policies
+      operationId: listPolicies
+      parameters:
+        - name: agent_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: tool_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: environment
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of policies
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyPage" }
+    post:
+      tags: [Policy]
+      summary: Create a policy in draft state
+      operationId: createPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyCreate" }
+      responses:
+        "201":
+          description: Policy created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Policy" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /policies/{policy_id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/PolicyId"
+    post:
+      tags: [Policy]
+      summary: Publish a new immutable policy version
+      operationId: publishPolicyVersion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyVersionCreate" }
+      responses:
+        "201":
+          description: Version published; bundle digest returned for audit citation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyVersion" }
+        "422":
+          description: Rego failed validation, so nothing was published
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /policy-evaluations:
+    post:
+      tags: [Policy]
+      summary: Dry-run a policy decision without executing anything
+      operationId: evaluatePolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyEvaluationRequest" }
+      responses:
+        "200":
+          description: The decision that would be taken, with matched policies
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PolicyJudgement" }
+  /approval-requests:
+    get:
+      tags: [Approval]
+      summary: List approval requests visible to the caller
+      operationId: listApprovalRequests
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ApprovalStatus" }
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: A page of approval requests
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApprovalRequestPage" }
+  /approval-requests/{request_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApprovalRequestId"
+    get:
+      tags: [Approval]
+      summary: Get an approval request with its evidence
+      operationId: getApprovalRequest
+      responses:
+        "200":
+          description: The approval request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApprovalRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /approval-requests/{request_id}/decisions:
+    parameters:
+      - $ref: "#/components/parameters/ApprovalRequestId"
+    post:
+      tags: [Approval]
+      summary: Approve or reject a high-risk request
+      operationId: decideApprovalRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApprovalDecisionCreate" }
+      responses:
+        "201":
+          description: Decision recorded (immutable)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApprovalDecision" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The request is no longer pending (decided or expired)
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /audit-events:
+    get:
+      tags: [Audit]
+      summary: Search the audit trail
+      operationId: searchAuditEvents
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actor_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: agent_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: tool_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: outcome
+          in: query
+          schema: { $ref: "#/components/schemas/AuditOutcome" }
+        - name: correlation_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/PageToken"
+      responses:
+        "200":
+          description: A page of audit events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditEventPage" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /audit-exports:
+    post:
+      tags: [Audit]
+      summary: Request an export of an audit query result
+      operationId: createAuditExport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuditExportCreate" }
+      responses:
+        "202":
+          description: Export accepted and queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditExport" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /audit-exports/{export_id}:
+    parameters:
+      - name: export_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Audit]
+      summary: Get export status and a download reference when ready
+      operationId: getAuditExport
+      responses:
+        "200":
+          description: Export status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditExport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /test-datasets:
+    post:
+      tags: [Evaluation]
+      summary: Create a new immutable test dataset version
+      operationId: createTestDataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestDatasetCreate" }
+      responses:
+        "201":
+          description: Dataset version created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestDataset" }
+        "409":
+          description: The dataset version already exists and is immutable; create a new version
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /evaluation-tasks:
+    post:
+      tags: [Evaluation]
+      summary: Create an evaluation task for an agent version
+      operationId: createEvaluationTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluationTaskCreate" }
+      responses:
+        "202":
+          description: Evaluation accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluationTask" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /evaluation-tasks/{task_id}/report:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Evaluation]
+      summary: Get the report for an evaluation task
+      operationId: getEvaluationReport
+      responses:
+        "200":
+          description: The evaluation report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluationReport" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /releases:
+    post:
+      tags: [Release]
+      summary: Release an agent version (optionally as a canary)
+      operationId: createRelease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseCreate" }
+      responses:
+        "201":
+          description: Release recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "409":
+          description: A blocking evaluation failure or an existing active release prevents this
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /releases/{release_id}/promote:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Release]
+      summary: Promote a canary to full rollout
+      operationId: promoteRelease
+      responses:
+        "200":
+          description: Promotion recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /releases/{release_id}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Release]
+      summary: Roll back to the previous release
+      operationId: rollbackRelease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseAction" }
+      responses:
+        "200":
+          description: Rollback recorded with the restored version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /releases/{release_id}/decommission:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Release]
+      summary: Decommission a released version
+      operationId: decommissionRelease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReleaseAction" }
+      responses:
+        "200":
+          description: Decommission recorded; the version can no longer be invoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Release" }
+  /dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Operational status, open risk events and pending approvals
+      operationId: getDashboardOverview
+      responses:
+        "200":
+          description: Overview payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardOverview" }
+  /dashboard/metrics:
+    get:
+      tags: [Dashboard]
+      summary: Governance metrics for a period, reconcilable with audit data
+      operationId: getDashboardMetrics
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: interval
+          in: query
+          schema: { type: string, enum: [hour, day, week] }
+      responses:
+        "200":
+          description: Metric series
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GovernanceMetrics" }
+  /dashboard/risk-events:
+    get:
+      tags: [Dashboard]
+      summary: Open risk events with links to their audit records
+      operationId: getRiskEvents
+      responses:
+        "200":
+          description: Open risk events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RiskEvent" }
+  /internal/invocations:
+    post:
+      tags: [Invocation]
+      summary: >
+        Record a governed invocation. Called by the MCP gateway only; not exposed
+        to the SPA. The gateway supplies the already-made policy and approval
+        decisions, which this endpoint records rather than re-derives.
+      operationId: recordInvocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvocationRecordRequest" }
+      responses:
+        "201":
+          description: >
+            Invocation recorded. A replayed request with the same idempotency key
+            returns the original invocation rather than creating a second one.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invocation" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /permissions:
+    get:
+      tags: [Permissions]
+      summary: List the permission catalogue
+      operationId: listPermissions
+      parameters:
+        - name: resource
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Permissions the catalogue recognises
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Permission" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /roles:
+    get:
+      tags: [Roles]
+      summary: List roles, including the immutable built-in roles
+      operationId: listRoles
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, retired] }
+      responses:
+        "200":
+          description: Roles visible to the caller's organisation
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Role" }
+    post:
+      tags: [Roles]
+      summary: Create a role; it grants nothing until permissions are bound
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleCreate" }
+      responses:
+        "201":
+          description: Role created with an empty permission set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Role" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /roles/{role_id}:
+    parameters:
+      - $ref: "#/components/parameters/RoleId"
+    get:
+      tags: [Roles]
+      summary: Get a role with its effective permission set
+      operationId: getRole
+      responses:
+        "200":
+          description: The role and the permissions it grants
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Role" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Roles]
+      summary: Amend a role's name or description, or retire it
+      operationId: updateRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RoleUpdate" }
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Role" }
+        "403":
+          description: The role is a built-in role and cannot be amended
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The role is assigned and cannot be deleted, only retired
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /roles/{role_id}/permissions:
+    parameters:
+      - $ref: "#/components/parameters/RoleId"
+    get:
+      tags: [Roles]
+      summary: List the permissions bound to a role
+      operationId: listRolePermissions
+      responses:
+        "200":
+          description: The role's effective permission set
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Permission" }
+    post:
+      tags: [Roles]
+      summary: Bind a permission to a role
+      operationId: bindRolePermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PermissionBinding" }
+      responses:
+        "201":
+          description: Permission bound
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PermissionBinding" }
+        "403":
+          description: The role is a built-in role and cannot be amended
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /roles/{role_id}/permissions/{permission_name}/unbind:
+    parameters:
+      - $ref: "#/components/parameters/RoleId"
+      - name: permission_name
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Roles]
+      summary: Unbind a permission from a role, recording why
+      description: >
+        A POST rather than a DELETE: the change requires a reason, and a request
+        body on DELETE is not reliably carried by clients.
+      operationId: unbindRolePermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RevokeAssignment" }
+      responses:
+        "204": { description: Permission unbound }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /agents/{agent_id}/responsibility:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      tags: [Responsibility]
+      summary: Get the accountable person for an Agent
+      operationId: getAgentResponsibility
+      responses:
+        "200":
+          description: The current holder and the transfer history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentResponsibility" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Responsibility]
+      summary: Assign or transfer accountability for an Agent
+      operationId: assignAgentResponsibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResponsibilityChange" }
+      responses:
+        "200":
+          description: >
+            Responsibility recorded; a transfer states a reason and is written to
+            the audit trail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentResponsibility" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OIDC access token issued by the platform's identity provider
+  parameters:
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RoleId:
+      name: role_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PermissionId:
+      name: permission_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AssignmentId:
+      name: assignment_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ToolId:
+      name: tool_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PolicyId:
+      name: policy_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ApprovalRequestId:
+      name: request_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReleaseId:
+      name: release_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    PageToken:
+      name: page_token
+      in: query
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Forbidden:
+      description: Authenticated but not permitted, or outside the caller's scope
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    NotFound:
+      description: Not found, or not visible to the caller's organisation
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    Conflict:
+      description: The request conflicts with existing state
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+    ValidationError:
+      description: The request failed validation; no partial state was created
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Stable machine-readable error code
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+    RiskLevel:
+      type: string
+      enum: [low, medium, high, critical]
+    AgentStatus:
+      type: string
+      enum: [draft, active, deprecated, retired]
+    AgentVersionStatus:
+      type: string
+      enum: [draft, in_review, released, deprecated, retired]
+    ToolStatus:
+      type: string
+      enum: [draft, active, deprecated, retired]
+    ApprovalStatus:
+      type: string
+      enum: [pending, approved, rejected, expired, cancelled]
+    AuditOutcome:
+      type: string
+      enum: [success, denied, failure, pending]
+    ReleaseState:
+      type: string
+      enum: [released, canary, promoted, rolled_back, decommissioned]
+    Principal:
+      type: object
+      required: [user_id, organisation_id, roles, permissions]
+      properties:
+        user_id: { type: string, format: uuid }
+        organisation_id: { type: string, format: uuid }
+        display_name: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+    User:
+      type: object
+      required: [id, external_subject, display_name, email, status]
+      properties:
+        id: { type: string, format: uuid }
+        external_subject: { type: string }
+        display_name: { type: string }
+        email: { type: string, format: email }
+        status: { type: string, enum: [active, disabled] }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+    UserCreate:
+      type: object
+      required: [external_subject, display_name, email]
+      properties:
+        external_subject: { type: string, minLength: 1, maxLength: 255 }
+        display_name: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email, maxLength: 320 }
+    UserUpdate:
+      type: object
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email, maxLength: 320 }
+        status: { type: string, enum: [active, disabled] }
+        reason: { type: string, maxLength: 1000 }
+    UserPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/User" }
+    Page:
+      type: object
+      properties:
+        next_page_token: { type: string, nullable: true }
+        total: { type: integer }
+    RoleAssignmentCreate:
+      type: object
+      required: [user_id, role_id, scope_type]
+      properties:
+        user_id: { type: string, format: uuid }
+        # By id, not by code: an organisation may create its own roles, which
+        # carry no code (only the five built-in roles do).
+        role_id: { type: string, format: uuid }
+        scope_type: { type: string, enum: [organisation, agent, tool] }
+        scope_id: { type: string, format: uuid, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        reason: { type: string, maxLength: 1000 }
+    RoleAssignment:
+      allOf:
+        - $ref: "#/components/schemas/RoleAssignmentCreate"
+        - type: object
+          required: [id, granted_by, granted_at]
+          properties:
+            id: { type: string, format: uuid }
+            granted_by: { type: string, format: uuid }
+            granted_at: { type: string, format: date-time }
+            revoked_at: { type: string, format: date-time, nullable: true }
+            revocation_reason: { type: string, nullable: true }
+    AgentCreate:
+      type: object
+      required: [name, owner_user_id]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        owner_user_id: { type: string, format: uuid }
+    AgentUpdate:
+      type: object
+      properties:
+        description: { type: string, maxLength: 4000 }
+        owner_user_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/AgentStatus" }
+    Agent:
+      type: object
+      required: [id, name, owner_user_id, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        owner_user_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/AgentStatus" }
+        active_version_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AgentPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Agent" }
+    AgentVersionCreate:
+      type: object
+      required: [version, owner_user_id]
+      properties:
+        version: { type: string, pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+([-.][A-Za-z0-9.]+)?$" }
+        owner_user_id: { type: string, format: uuid }
+        model_id: { type: string, format: uuid, nullable: true }
+        status: { $ref: "#/components/schemas/AgentVersionStatus" }
+    AgentVersion:
+      allOf:
+        - $ref: "#/components/schemas/AgentVersionCreate"
+        - type: object
+          required: [id, agent_id, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            agent_id: { type: string, format: uuid }
+            released_at: { type: string, format: date-time, nullable: true }
+            created_at: { type: string, format: date-time }
+    ToolPermissionInput:
+      type: object
+      required: [resource_type, action]
+      properties:
+        resource_type: { type: string, minLength: 1 }
+        action: { type: string, enum: [read, write, approve, delete, execute] }
+        data_class: { type: string, nullable: true }
+        constraint: { type: object, additionalProperties: true }
+    ToolPermission:
+      allOf:
+        - $ref: "#/components/schemas/ToolPermissionInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, format: uuid }
+    ToolCreate:
+      type: object
+      required: [name, risk_level, risk_basis, adapter_ref, permissions]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 4000 }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        risk_basis: { type: string, minLength: 1, maxLength: 2000 }
+        adapter_ref: { type: string, minLength: 1 }
+        permissions:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ToolPermissionInput" }
+    ToolUpdate:
+      type: object
+      properties:
+        description: { type: string, maxLength: 4000 }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        risk_basis: { type: string, maxLength: 2000 }
+        status: { $ref: "#/components/schemas/ToolStatus" }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/ToolPermissionInput" }
+    Tool:
+      type: object
+      required: [id, name, risk_level, risk_basis, status, permissions, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        risk_basis: { type: string }
+        adapter_ref: { type: string }
+        requires_sandbox_class: { type: string, enum: [shared, dedicated] }
+        status: { $ref: "#/components/schemas/ToolStatus" }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/ToolPermission" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ToolPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Tool" }
+    UsageRestriction:
+      type: object
+      required: [restriction_type, dimension, value]
+      properties:
+        restriction_type: { type: string, enum: [allowed, prohibited] }
+        dimension: { type: string, enum: [scenario, data_class, region] }
+        value: { type: string }
+        reason: { type: string, nullable: true }
+    ModelCreate:
+      type: object
+      required: [name, vendor, restrictions]
+      properties:
+        name: { type: string, minLength: 1 }
+        vendor: { type: string, minLength: 1 }
+        version: { type: string, nullable: true }
+        status: { type: string, enum: [approved, restricted, withdrawn] }
+        restrictions:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/UsageRestriction" }
+    Model:
+      allOf:
+        - $ref: "#/components/schemas/ModelCreate"
+        - type: object
+          required: [id, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    ModelPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Model" }
+    PolicyCreate:
+      type: object
+      required: [name, effect, environment, priority]
+      properties:
+        name: { type: string, minLength: 1 }
+        effect: { type: string, enum: [allow, deny] }
+        agent_id: { type: string, format: uuid, nullable: true }
+        tool_id: { type: string, format: uuid, nullable: true }
+        environment: { type: string }
+        valid_from: { type: string, format: date-time, nullable: true }
+        valid_until: { type: string, format: date-time, nullable: true }
+        priority: { type: integer, minimum: 0 }
+        rego_module: { type: string }
+    PolicyVersionCreate:
+      type: object
+      required: [rego_module]
+      properties:
+        rego_module: { type: string, minLength: 1 }
+        document_metadata: { type: object, additionalProperties: true }
+    PolicyVersion:
+      type: object
+      required: [id, policy_id, version_number, bundle_digest, published_at]
+      properties:
+        id: { type: string, format: uuid }
+        policy_id: { type: string, format: uuid }
+        version_number: { type: integer }
+        bundle_digest: { type: string }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string, format: uuid }
+    Policy:
+      allOf:
+        - $ref: "#/components/schemas/PolicyCreate"
+        - type: object
+          required: [id, status, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [draft, published, retired] }
+            current_version_id: { type: string, format: uuid, nullable: true }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+    PolicyPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/Policy" }
+    PolicyEvaluationRequest:
+      type: object
+      required: [agent_version_id, tool_id, environment]
+      properties:
+        agent_version_id: { type: string, format: uuid }
+        tool_id: { type: string, format: uuid }
+        environment: { type: string }
+        parameters: { type: object, additionalProperties: true }
+        at: { type: string, format: date-time, nullable: true }
+    PolicyJudgement:
+      type: object
+      required: [decision, applied_risk_level, reason, decided_at]
+      properties:
+        decision: { type: string, enum: [allow, deny] }
+        matched_policies:
+          type: array
+          items:
+            type: object
+            properties:
+              policy_id: { type: string, format: uuid }
+              policy_version_id: { type: string, format: uuid }
+              effect: { type: string, enum: [allow, deny] }
+        conflict_resolution: { type: string, nullable: true }
+        applied_risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        requires_approval: { type: boolean }
+        reason: { type: string }
+        degraded_mode: { type: boolean }
+        decided_at: { type: string, format: date-time }
+    ApprovalDecisionCreate:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    ApprovalDecision:
+      type: object
+      required: [id, approval_request_id, approver_user_id, decision, reason, decided_at]
+      properties:
+        id: { type: string, format: uuid }
+        approval_request_id: { type: string, format: uuid }
+        approver_user_id: { type: string, format: uuid }
+        decision: { type: string, enum: [approve, reject] }
+        reason: { type: string }
+        decided_at: { type: string, format: date-time }
+    ApprovalRequest:
+      type: object
+      required: [id, invocation_id, status, required_approvals, created_at, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        invocation_id: { type: string, format: uuid }
+        requested_by: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ApprovalStatus" }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        required_approvals: { type: integer, minimum: 1 }
+        allow_self_approval: { type: boolean }
+        evidence: { type: object, additionalProperties: true }
+        decisions:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalDecision" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    ApprovalRequestPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/ApprovalRequest" }
+    AuditEvent:
+      type: object
+      required: [id, sequence, event_type, actor_type, actor_id, action, target_type, target_id, outcome, occurred_at, recorded_at, entry_hash]
+      properties:
+        id: { type: string, format: uuid }
+        sequence: { type: integer }
+        event_type: { type: string }
+        actor_type: { type: string, enum: [user, agent, system] }
+        actor_id: { type: string, format: uuid }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string, format: uuid }
+        outcome: { $ref: "#/components/schemas/AuditOutcome" }
+        reason: { type: string, nullable: true }
+        detail: { type: object, additionalProperties: true }
+        correlation_id: { type: string, format: uuid, nullable: true }
+        occurred_at: { type: string, format: date-time }
+        recorded_at: { type: string, format: date-time }
+        prev_hash: { type: string, nullable: true }
+        entry_hash: { type: string }
+    AuditEventPage:
+      allOf:
+        - $ref: "#/components/schemas/Page"
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/AuditEvent" }
+    AuditExportCreate:
+      type: object
+      required: [filter]
+      properties:
+        filter: { type: object, additionalProperties: true }
+        format: { type: string, enum: [jsonl, csv], default: jsonl }
+    AuditExport:
+      type: object
+      required: [id, status, requested_by, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, ready, failed, expired] }
+        requested_by: { type: string, format: uuid }
+        row_count: { type: integer, nullable: true }
+        object_ref: { type: string, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    TestDatasetCreate:
+      type: object
+      required: [name, version_number, object_ref]
+      properties:
+        name: { type: string, minLength: 1 }
+        version_number: { type: integer, minimum: 1 }
+        object_ref: { type: string }
+    TestDataset:
+      allOf:
+        - $ref: "#/components/schemas/TestDatasetCreate"
+        - type: object
+          required: [id, content_digest, is_immutable, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            content_digest: { type: string }
+            is_immutable: { type: boolean }
+            created_at: { type: string, format: date-time }
+    EvaluationTaskCreate:
+      type: object
+      required: [agent_version_id, test_dataset_id, criteria]
+      properties:
+        agent_version_id: { type: string, format: uuid }
+        test_dataset_id: { type: string, format: uuid }
+        criteria:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [criterion, blocking]
+            properties:
+              criterion: { type: string }
+              blocking: { type: boolean }
+    EvaluationTask:
+      allOf:
+        - $ref: "#/components/schemas/EvaluationTaskCreate"
+        - type: object
+          required: [id, status, created_at]
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [queued, running, completed, failed, cancelled] }
+            created_by: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+    EvaluationReport:
+      type: object
+      required: [id, evaluation_task_id, overall_result, results, produced_at]
+      properties:
+        id: { type: string, format: uuid }
+        evaluation_task_id: { type: string, format: uuid }
+        overall_result: { type: string, enum: [pass, fail, inconclusive] }
+        blocking_failure: { type: boolean }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              criterion: { type: string }
+              result: { type: string, enum: [pass, fail, skipped] }
+              observed: { type: string, nullable: true }
+              expected: { type: string, nullable: true }
+        produced_at: { type: string, format: date-time }
+    ReleaseCreate:
+      type: object
+      required: [agent_id, agent_version_id]
+      properties:
+        agent_id: { type: string, format: uuid }
+        agent_version_id: { type: string, format: uuid }
+        canary_percent: { type: integer, minimum: 1, maximum: 100, nullable: true }
+    ReleaseAction:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+    Release:
+      type: object
+      required: [id, agent_id, agent_version_id, state, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid }
+        agent_version_id: { type: string, format: uuid }
+        state: { $ref: "#/components/schemas/ReleaseState" }
+        canary_percent: { type: integer, nullable: true }
+        previous_release_id: { type: string, format: uuid, nullable: true }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    DashboardOverview:
+      type: object
+      properties:
+        agents_by_status:
+          type: object
+          additionalProperties: { type: integer }
+        tools_by_risk_level:
+          type: object
+          additionalProperties: { type: integer }
+        pending_approvals:
+          type: array
+          items: { $ref: "#/components/schemas/ApprovalRequest" }
+        open_risk_events:
+          type: array
+          items: { $ref: "#/components/schemas/RiskEvent" }
+    GovernanceMetrics:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            from: { type: string, format: date-time }
+            to: { type: string, format: date-time }
+            interval: { type: string }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket: { type: string, format: date-time }
+              invocations: { type: integer }
+              denials: { type: integer }
+              approvals_requested: { type: integer }
+              approvals_granted: { type: integer }
+              approval_latency_p95_seconds: { type: number }
+    RiskEvent:
+      type: object
+      required: [id, severity, summary, source, status, detected_at]
+      properties:
+        id: { type: string, format: uuid }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        summary: { type: string }
+        source:
+          type: string
+          enum: [audit_chain_mismatch, rollback_failure, approval_anomaly, policy_degraded_mode, manual]
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        audit_event_id: { type: string, format: uuid, nullable: true }
+        detected_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        resolved_by: { type: string, format: uuid, nullable: true }
+    InvocationRecordRequest:
+      type: object
+      required: [agent_version_id, tool_id, idempotency_key, risk_level, judgement]
+      properties:
+        agent_version_id: { type: string, format: uuid }
+        tool_id: { type: string, format: uuid }
+        idempotency_key: { type: string, minLength: 1, maxLength: 200 }
+        parameters_digest: { type: string }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        correlation_id: { type: string, format: uuid, nullable: true }
+        judgement: { $ref: "#/components/schemas/PolicyJudgement" }
+        approval_request_id: { type: string, format: uuid, nullable: true }
+        status:
+          type: string
+          enum: [denied, pending_approval, approved, executing, succeeded, failed, expired]
+    Invocation:
+      type: object
+      required: [id, agent_version_id, tool_id, status, risk_level, idempotency_key, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        agent_version_id: { type: string, format: uuid }
+        tool_id: { type: string, format: uuid }
+        idempotency_key: { type: string }
+        risk_level: { $ref: "#/components/schemas/RiskLevel" }
+        status:
+          type: string
+          enum: [pending_policy, denied, pending_approval, approved, executing, succeeded, failed, expired, cancelled]
+        correlation_id: { type: string, format: uuid, nullable: true }
+        occurred_at: { type: string, format: date-time }
+    Permission:
+      type: object
+      description: >
+        One authorisable action. Platform-wide reference data: it names an action,
+        not an organisation.
+      required: [name, resource, action, description, is_builtin]
+      properties:
+        name: { type: string, examples: ["registry.write"] }
+        resource: { type: string, examples: ["registry"] }
+        action: { type: string, examples: ["write"] }
+        description: { type: string }
+        is_builtin: { type: boolean }
+    PermissionBinding:
+      type: object
+      required: [permission_name]
+      properties:
+        permission_name: { type: string }
+        rationale: { type: string, nullable: true, maxLength: 1000 }
+    RoleCreate:
+      type: object
+      required: [name, description]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 1000 }
+    RoleUpdate:
+      type: object
+      properties:
+        description: { type: string, maxLength: 1000 }
+        status: { type: string, enum: [active, retired] }
+    Role:
+      type: object
+      required: [id, name, description, status, is_builtin, permissions]
+      properties:
+        id: { type: string, format: uuid }
+        code:
+          type: string
+          nullable: true
+          description: >
+            Present only for the five built-in roles; an organisation's own roles
+            carry no code.
+          enum: [platform_administrator, agent_developer, security_compliance, business_approver, auditor]
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, retired] }
+        is_builtin: { type: boolean }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        created_at: { type: string, format: date-time, nullable: true }
+    RevokeAssignment:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    ResponsibilityChange:
+      type: object
+      required: [accountable_user_id, reason]
+      properties:
+        accountable_user_id: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+    AgentResponsibility:
+      type: object
+      required: [agent_id, accountable_user_id, assigned_at]
+      properties:
+        agent_id: { type: string, format: uuid }
+        accountable_user_id: { type: string, format: uuid }
+        assigned_by: { type: string, format: uuid, nullable: true }
+        assigned_at: { type: string, format: date-time }
+        history:
+          type: array
+          description: Derived from the audit trail, not from a second table.
+          items:
+            type: object
+            properties:
+              accountable_user_id: { type: string, format: uuid }
+              assigned_at: { type: string, format: date-time }
+              ended_at: { type: string, format: date-time, nullable: true }
+              transfer_reason: { type: string, nullable: true }

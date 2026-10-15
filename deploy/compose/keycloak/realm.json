@@ -1,0 +1,79 @@
+{
+  "realm": "gov",
+  "enabled": true,
+  "displayName": "Agent Governance (development realm)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      { "name": "platform_administrator", "description": "Registers Agents, Tools and Models; operates the platform" },
+      { "name": "agent_developer", "description": "Registers and releases Agent versions" },
+      { "name": "security_compliance", "description": "Authors policies and oversees compliance" },
+      { "name": "business_approver", "description": "Approves or rejects high-risk operations" },
+      { "name": "auditor", "description": "Searches and exports the audit trail" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "gov-api",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "gov-web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ],
+  "users": [
+    {
+      "username": "admin.dev",
+      "enabled": true,
+      "email": "admin.dev@example.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only", "temporary": false }],
+      "realmRoles": ["platform_administrator"]
+    },
+    {
+      "username": "developer.dev",
+      "enabled": true,
+      "email": "developer.dev@example.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only", "temporary": false }],
+      "realmRoles": ["agent_developer"]
+    },
+    {
+      "username": "security.dev",
+      "enabled": true,
+      "email": "security.dev@example.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only", "temporary": false }],
+      "realmRoles": ["security_compliance"]
+    },
+    {
+      "username": "approver.dev",
+      "enabled": true,
+      "email": "approver.dev@example.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only", "temporary": false }],
+      "realmRoles": ["business_approver"]
+    },
+    {
+      "username": "auditor.dev",
+      "enabled": true,
+      "email": "auditor.dev@example.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "dev-only", "temporary": false }],
+      "realmRoles": ["auditor"]
+    }
+  ]
+}

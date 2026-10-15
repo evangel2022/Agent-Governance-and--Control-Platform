@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Tests, static analysis and dependency scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Gate 1: Python static analysis
+      - name: ruff (lint)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "apps/api[dev]"
+          ruff check apps services
+
+      - name: mypy (types)
+        run: |
+          MYPYPATH=apps/api/src mypy apps/api/src
+          MYPYPATH=services/gateway/src mypy services/gateway/src
+          MYPYPATH=services/runner/src mypy services/runner/src
+          MYPYPATH=services/worker/src mypy services/worker/src
+
+      # Gate 2: TypeScript static analysis
+      - name: eslint and tsc
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run lint --if-present
+          npx tsc --noEmit
+
+      # Gate 3: architecture boundaries
+      - name: import-linter (layering)
+        run: lint-imports
+
+      # Gate 4: tests
+      - name: pytest (unit, integration, security)
+        run: cd apps/api && pytest -q
+
+      # Gate 4b: the permission surface, run explicitly so this gate cannot be
+      # dropped by a change to the wider test selection. It asserts that every
+      # route declares its guard and that an unpermitted caller is refused.
+      - name: pytest (permission security matrix)
+        run: cd apps/api && pytest -q tests/security
+
+      # Gate 5: contract tests against the committed OpenAPI document
+      - name: schemathesis contract tests
+        run: cd apps/api && pytest -q tests/contract
+
+      # Gate 6: policy unit tests
+      - name: opa test
+        run: |
+          curl -sSL -o /usr/local/bin/opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+          # `deploy/policy` holds both bundles: tool invocation (policy.rego) and
+          # authorization (authorization.rego), so this gate covers both.
+          opa test deploy/policy
+
+      # Gate 7: dependency vulnerability scanning
+      - name: dependency scanning
+        run: |
+          pip install pip-audit
+          pip-audit --strict
+          cd apps/web && npm audit --audit-level=high
+
+      # Gate 8: container and filesystem scanning
+      - name: trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+      # Gate 9: secret scanning and migration/model drift
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: alembic check (models match migrations)
+        run: cd apps/api && alembic check

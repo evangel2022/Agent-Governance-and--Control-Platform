@@ -1,0 +1,16 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S", "C4", "SIM", "RUF"]
+ignore = ["S101"]
+
+[lint.per-file-ignores]
+"apps/api/tests/**" = ["S", "B011"]
+"services/*/tests/**" = ["S"]
+# Migrations assemble DDL from module constants. DDL cannot be parameterised, so
+# S608 is not a meaningful signal there; the constants are the only inputs.
+"apps/api/migrations/**" = ["S608"]
+
+[lint.isort]
+known-first-party = ["gov"]
